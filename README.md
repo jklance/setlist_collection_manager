@@ -40,6 +40,6 @@ for a song would include
     - Notes
 - Performance: When an artist delivers a series of Songs at a Venue on a Date
 - Setlist: A listing of all of the Songs performed by the Artist at one Performance at one Venue on one Date in the order that they were performed
-- Show: All of the Performances by all Artists at one Venue on one Date
-- Show Setlist: All of the Songs performed by all Artists at a Show in order 
+- Concert: All of the Performances by all Artists at one Venue on one Date
+- Concert Setlist: All of the Songs performed by all Artists at a Show in order 
 of Performance
