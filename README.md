@@ -1,45 +1,77 @@
-# Setlist Collection Manager
-Hobby project to collect set lists and links to setlist.fm entries for shows 
-that I have gone to and will go to in the future. It's mostly a chance to 
-play with AI tools to familiarize myself and to lightweight dust off my 
-coding rustiness.
+# General Concept
+A place to plan and track attendance at events and live performances like concerts, festivals, plays, musicals, comedy shows, etc. Allows users with accounts to add to a shared listing of performers (like bands, comedians, etc), venues, show runs (like runs of a musical, music festivals, band tours, etc) to plan ahead for upcoming events and to document past attendance of those shows.
 
-## Features
-This is less a feature list and more an aspirational list of things I hope
-to add to it as I go:
-- Database of Venues, Bands, Shows, Links to setlists on setlist.fm, and Setlists
-- Interface to setlist.fm's API
-- Ability to provide a date and venue pair to get links to correct shows on 
-setlist.fm
-- Ability to view the collected list of shows by date, venue, or band
-- Ability to pull metrics from attended shows like shows/bands/songs in a 
-year, etc
-- Ability to edit or add shows/bands/venues/songs manually
-- Automatic normalizing of data to source(s); band name, venue name, maybe 
-others (not song name)
-- Ability to submit a full list of date/venue pairs and have lists of concert 
-entries generated automatically
-- Ability to export a dump of all songs in order for a show
-- Ability to sync attendance at a show on setlist.fm by adding it to the this
-database
-
-## Definitions
-Some data definitions as I'm using them:
-- Venue: The place a show takes place. Data for a venue would include
-    - Name
-    - City
-    - State
-- Artist: One of the bands/solo performers performing a set of songs at a show. 
-Data for an artist would include
-    - Name
-    - Notes
-- Song: One of the musical performances done during a set by an artist. Data 
-for a song would include
-    - Name
-    - Artist
-    - Notes
-- Performance: When an artist delivers a series of Songs at a Venue on a Date
-- Setlist: A listing of all of the Songs performed by the Artist at one Performance at one Venue on one Date in the order that they were performed
-- Concert: All of the Performances by all Artists at one Venue on one Date
-- Concert Setlist: All of the Songs performed by all Artists at a Show in order 
-of Performance
+# Features
+## Account Features
+- Login/Password to view and edit your individual performance listings
+- Friends lists allow you to collaborate on events and share schedules
+- History reporting will allow you to view filtered lists of events by date range, future/past, type of event, other attendees, venue, and others
+- Notes about events, venues, and performances shared as Private, Public, or Friends-only
+## General Features
+- Allows signed in users to add/edit venues, artists, tours, and shows to a shared data bank
+- Performance data can include links to set lists at Setlist.com
+- A calendar view allowing users to see events and to toggle on and off Friend accounts in that view to coordinate at festivals and conferences
+- Export tool for adding events to a Google Calendar or something similar
+# Data Model
+Asterisks* below represent required fields
+Carets^ below represent connection to another data source
+## Venues
+Storage for places where events will happen. Every Event must have a Venue associated with it. ==Perhaps this should be "every event must have one or more venues"? Does that needlessly complicate the model for very little value?==
+- Unique ID*
+- Name*
+- City*
+- State
+- Street Address
+- Size (seats/people)
+- URL
+## Artists
+Listing of performers like bands, comedians, etc. Most Events would have one or more Performances that might include an Artist (like a Comedy show would have a Comedian artist, and a Concert would have a Band artist), but might not include an Artist (like a Musical or Play might not list an Artist of any sort--or the theater troupe might be the Artist).
+- Unique ID*
+- Name*
+- Type* (`Band`, `Comedian`, `Performer`, `Troupe`, `Theater Company`, etc)
+- URL
+## Show Runs
+A named series of shows, typically spanning multiple dates, Venues, and perhaps even containing several Artists. Examples include a touring company's shows of a musical or a band's album tour. Not all Performances will be a part of a Show Run, but a Performance would be a part of no more than 1 show run.
+- Unique ID*
+- Name*
+- Artist^
+## Performances
+A single exhibition of some sort (Concert, Musical, Set, etc) at a single Venue on a single date and time frame. One or more Performances would make up an Event.
+- Unique ID*
+- Artist^*
+- Setlist Link
+- Show Run^
+- Date *
+- Time*
+## Events
+A collection of Performances across one or more dates
+- Unique ID*
+- Venue^*
+- Performance^*
+- Start Date*
+- End Date*
+- URL
+## Notes
+Public, Private, or Friends-only notes attached to various types of viewable data
+- Unique ID*
+- Note Type* (`Event`, `Performance`, `Artist`, `Venue`)
+- Privacy* (`Public`, `Friends`, `Private`)
+- User ID^*
+- Date & Time*
+## Users
+Store of user accounts and salient user data
+- User ID*
+- User Name*
+- Password*
+- Email Address*
+- Setlist FM Key
+## Relationships
+Storing the friendship and follow status for users of the system. For simplicity's sake, there's only two formal relationships between a User and a Relation: following and blocked. This would be depicted as a User's Followers, Following, Blocked, and Friends (where accounts follow each other)
+- User ID^*
+- Relation^* (User->User ID for the user the relationship describes)
+- Relationship* (`following` or `blocked`)
+- Change Date*
+## Attendance
+Stores the past and future event data for a User
+- User ID^*
+- Performance^*
