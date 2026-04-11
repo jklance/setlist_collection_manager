@@ -327,6 +327,8 @@ CREATE TABLE IF NOT EXISTS users (
     username        TEXT    NOT NULL UNIQUE,
     email           TEXT    NOT NULL UNIQUE,
     password_hash   TEXT    NOT NULL,
+    email_verified  INTEGER NOT NULL DEFAULT 0,  -- boolean: email address confirmed
+    approved        INTEGER NOT NULL DEFAULT 0,  -- boolean: admin-granted write access
     is_admin        INTEGER NOT NULL DEFAULT 0,  -- boolean: admin privileges
     locked          INTEGER NOT NULL DEFAULT 0,  -- boolean: account locked by admin
     timezone        TEXT    NOT NULL DEFAULT 'America/New_York',  -- IANA timezone
@@ -573,7 +575,7 @@ elements. This is not a REST API -- URLs return rendered HTML.
 
 | Blueprint       | Prefix           | Key Routes                                                |
 |-----------------|------------------|-----------------------------------------------------------|
-| `auth`          | `/auth`          | `GET /login`, `POST /login`, `GET /register`, `POST /register`, `POST /logout` |
+| `auth`          | `/auth`          | `GET /login`, `POST /login`, `GET /register`, `POST /register`, `POST /logout`, `GET /verify/<token>`, `POST /resend-verification` |
 | `events`        | `/events`        | `GET /` (list), `GET /new`, `POST /new`, `GET /<id>`, `GET /<id>/edit`, `POST /<id>/edit`, `POST /<id>/delete` |
 | `artists`       | `/artists`       | Same CRUD pattern as events                               |
 | `venues`        | `/venues`        | Same CRUD pattern as events                               |
@@ -582,6 +584,7 @@ elements. This is not a REST API -- URLs return rendered HTML.
 | `calendar`      | `/calendar`      | `GET /` (calendar view), `GET /feed.ics` (iCal export), `GET /data.json` (FullCalendar JSON feed) |
 | `social`        | `/social`        | `GET /profile/<username>`, `POST /follow/<user_id>`, `POST /unfollow/<user_id>`, `POST /block/<user_id>`, `GET /friends` |
 | `search`        | `/search`        | `GET /` (search page), `GET /results` (HTMX partial)     |
+| `admin`         | `/admin`         | `GET /users` (pending/all users list), `POST /users/<id>/approve` |
 
 The root URL (`/`) shows the home page: a list of the user's recent and
 upcoming events (by attendance). Unauthenticated users are redirected to login.
@@ -613,25 +616,39 @@ enables infinite scroll with a "Load more" fallback link for non-JS users.
 ### Authentication Flow
 
 1. **Registration**: Username + email + password. Password hashed with bcrypt
-   (via the `bcrypt` library directly, cost factor 12). No email verification
-   for v1.
-2. **Login**: Username + password. Flask-Login manages the session cookie.
-3. **Session**: Server-side session stored in Flask's default signed cookie.
+   (via the `bcrypt` library directly, cost factor 12).
+2. **Email verification**: On registration, the account is created with
+   `email_verified = 0`. A verification email is sent containing a signed,
+   time-limited token (using `itsdangerous`, already a Flask dependency).
+   Clicking the link sets `email_verified = 1`. A "resend verification"
+   option is available on the home page for unverified users.
+3. **Login**: Username + password. Flask-Login manages the session cookie.
+4. **Session**: Server-side session stored in Flask's default signed cookie.
    `SESSION_COOKIE_HTTPONLY=True`, `SESSION_COOKIE_SAMESITE='Lax'`.
-4. **Logout**: Clears the session.
+5. **Logout**: Clears the session.
 
 ### Authorization Rules
 
 - **Public pages (no login required)**: Login, register, public artist/venue
   listings, public notes.
-- **Authenticated pages**: Creating/editing entities, attendance tracking,
-  calendar, social features, private/friends-only notes.
+- **Read-only (logged in, default for new accounts)**: All new accounts start
+  read-only (`approved = 0`). Read-only users can browse all public listings,
+  view event/artist/venue detail pages, and manage their own profile settings.
+  They cannot create or edit entities, track attendance, add notes, or use
+  social features. The UI hides write controls and shows a banner explaining
+  the account is pending approval.
+- **Approved (full access)**: An admin sets `approved = 1` to grant write
+  access. Approved users can create/edit entities, track attendance, add
+  notes, use calendar and social features. Email verification is still
+  required independently -- an approved but unverified user is prompted to
+  verify before gaining full access.
 - **Ownership**: Users can only edit/delete their own attendance records, notes,
-  and profile. Entity data (artists, venues, events) is shared -- any logged-in
+  and profile. Entity data (artists, venues, events) is shared -- any approved
   user can edit, unless the entity is locked.
-- **Admin**: Users with `is_admin` set can: view change history for any entity,
-  revert an entity to a previous state from its history, lock/unlock artists,
-  venues, and events to prevent edits, and lock/unlock user accounts.
+- **Admin**: Users with `is_admin` set can: approve new accounts, view change
+  history for any entity, revert an entity to a previous state from its
+  history, lock/unlock artists, venues, and events to prevent edits, and
+  lock/unlock user accounts.
 - **Note privacy**: Private notes visible only to author. Friends-only notes
   visible to author and mutual follows. Public notes visible to everyone.
 - **Blocking**: A blocked user cannot see the blocker's profile, notes, or
@@ -653,7 +670,7 @@ Flask-WTF's `CSRFProtect` is initialized app-wide. Every form includes
 - Bcrypt with cost factor 12 (default).
 - Passwords validated on registration: minimum 8 characters, no maximum
   (bcrypt truncates at 72 bytes -- document this in the UI).
-- No password reset in v1 (solo/small-group use; can reset via CLI).
+- Password reset via email planned for Phase 5 (Polish) or earlier.
 
 ---
 
@@ -1064,6 +1081,12 @@ Environment variables loaded via python-dotenv from `.env`:
 FLASK_SECRET_KEY=change-me-to-a-random-string
 DATABASE=instance/app.db
 FLASK_ENV=production
+MAIL_SERVER=smtp.example.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=you@example.com
+MAIL_PASSWORD=your-smtp-password
+MAIL_DEFAULT_SENDER=noreply@example.com
 ```
 
 `FLASK_SECRET_KEY` must be set. The app refuses to start without it in
@@ -1102,10 +1125,13 @@ Build in vertical slices. Each phase produces a working (if incomplete) app.
 - `flask init-db` CLI command
 - Base template with Pico CSS and HTMX
 - Auth blueprint: register, login, logout
+- Email verification on registration (signed token via `itsdangerous`,
+  sent via `smtplib`). This also establishes the email-sending
+  infrastructure reused by password reset in Phase 5.
 - User repository with password hashing
-- Tests for auth flow
+- Tests for auth flow (including verification happy path and expired token)
 
-**Milestone: A user can register, log in, and see an empty home page.**
+**Milestone: A user can register, verify their email, log in, and see an empty home page.**
 
 ### Phase 2: Core Data
 
@@ -1144,6 +1170,7 @@ Build in vertical slices. Each phase produces a working (if incomplete) app.
 - Error pages (404, 500)
 - Input validation tightening
 - Performance: add `busy_timeout` pragma, review query plans for slow pages
+- Password reset flow (email-based token, reset form, expiry)
 - Security review: check all auth gates, CSRF coverage, input sanitization
 
 **Milestone: App is ready for daily use by individual users.**
